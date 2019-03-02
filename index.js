@@ -1,110 +1,82 @@
-var util = require('util')
 var fs = require('fs')
 var path = require('path')
-var Promise = require('bluebird')
 var OSS = require('ali-oss').Wrapper
 var utils = require('./utils')
 
-var baseStore = require('ghost-storage-base')
+var StorageBase = require('ghost-storage-base')
 
-class OssStore extends baseStore {
+class OssStore extends StorageBase {
   constructor (config) {
     super(config)
     this.options = config || {}
     this.client = new OSS(this.options)
   }
 
-  save (file, targetDir) {
-    var client = this.client
-    var origin = this.options.origin  
-    var key = this.getFileKey(file)
+  async save (file) {
+    const origin = this.options.origin
+    const key = this.getFileKey(file)
 
-    return new Promise(function (resolve, reject) {
-      return client.put(
-        key, 
-        fs.createReadStream(file.path)
-      )
-      .then(function (result) {
-        // console.log(result)
-        if(origin){
-          resolve(utils.joinUrl(origin, result.name))
-        }else{
-          resolve(result.url)
-        }      
-      })
-      .catch(function (err) {
-        // console.log(err)
-        reject(false)
-      })
-    })
-  }
+    const result = await this.client.put(
+      key,
+      fs.createReadStream(file.path)
+    )
 
-  exists (filename) {
-    // console.log('exists',filename)
-    var client = this.client  
-  
-    return new Promise(function (resolve, reject) {
-      return client.head(filename).then(function (result) {
-        // console.log(result)
-        resolve(true)
-      }).catch(function (err) {
-        // console.log(err)
-        reject(false)
-      })
-  
-    })
-  }
-  
-  serve (options) {  
-    return function (req, res, next) {
-      next();
+    if (origin) {
+      return utils.joinUrl(origin, result.name)
+    } else {
+      return result.url
     }
   }
-  
-  delete (filename) {
-    var client = this.client  
-  
-    // console.log('del',filename)
-    return new Promise(function (resolve, reject) {
-      return client.delete(filename).then(function (result) {
-        // console.log(result)
-        resolve(true)
-      }).catch(function (err) {
-        // console.log(err)
-        reject(false)
-      })
-    })
+
+  async exists (filename) {
+    try {
+      await this.client.head(filename)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  serve () {
+    return (req, res, next) => next()
+  }
+
+  async delete(filename) {
+    try {
+      await this.client.delete(filename)
+      return true
+    } catch {
+      return false
+    }
   }
 
   read () {
 
   }
- 
+
   getFileKey (file) {
-    var keyOptions = this.options.fileKey
-  
+    const keyOptions = this.options.fileKey
+
     if (keyOptions) {
-      var getValue = function (obj) {
-        return typeof obj === 'function' ? obj() : obj
-      };
-      var ext = path.extname(file.name)
-      var name = path.basename(file.name, ext)
-  
+      const getValue = (obj) => typeof obj === 'function' ? obj() : obj;
+      const ext = path.extname(file.name)
+      let name = path.basename(file.name, ext)
+
       if (keyOptions.safeString) {
         name = utils.safeString(name)
       }
-  
+
       if (keyOptions.prefix) {
         name = path.join(keyOptions.prefix, name);
       }
-  
+
       if (keyOptions.suffix) {
         name += getValue(keyOptions.suffix)
       }
-  
+
       return name + ext.toLowerCase();
     }
-  
+
     return null;
   }
 }
